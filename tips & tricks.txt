@@ -1,0 +1,446 @@
+Соединение в веб-сайтом
+-----------------------
+Для установки защищенного соединения используются особые протоколы (SSL, TLS) и шифронаборы (cipher suites).
+При установке соединения выполняется процесс TLS-рукопожатия (handshake), при котором сайту передается информация об используемом протоколе и возможных для использования шифронаборов.
+Если сайт поддерживает данный протокол и в списке есть подходящий шифронабор, соединение успешно устаналивается и отправляется ответная информация о выбранном шифронаборе.
+Подробнее с данным механизмом можно ознакомиться в статье https://tproger.ru/articles/tls-handshake-explained/.
+
+Посмотреть передаваемую информацию о методах шифрования в процессе установки соединения можно с помощью программы анализа сетевых пакетов [Wireshark|https://www.wireshark.org/download.html].
+Список поддерживаемых шифронаборов в определенной версии Windows можно узнать по ссылке https://docs.microsoft.com/en-us/windows/win32/secauthn/cipher-suites-in-schannel.
+Получить информацию об используемых сайтом протоколах и шифронаборах можно по ссылке https://www.ssllabs.com/ssltest/analyze.html?d=api%2dip.fssprus.ru&latest.
+
+Виды ошибок:
+{noformat}
+The underlying connection was closed: An unexpected error occurred on a send.
+System.IO.IOException: Authentication failed because the remote party has closed the transport stream.
+{noformat}
+
+Возникает из-за использования несопоставимых протоколов.
+Например, данная ошибка будет возникать на Windows Server 2008, где по умолчанию используется TLS1.1.
+
+{noformat}
+The request was aborted: Could not create SSL/TLS secure channel.
+{noformat}
+
+Ошибка возникает из-за несоответствия шифронаборов.
+Например, на Windows Server 2012, где используется протокол TLS1.2, однако отсутсвуют необходимые шифронаборы.
+Также данную ошибку можно вопсроизвести и на Windows Server 2008, если в коде службы явно указать использование протокола TLS1.2:
+{code:java}
+ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+{code}
+
+Также стоит отметить, что в Google Chrome сайт может открываться даже в ранних версиях Windows Server, т.к. там используются собственные механизмы для установки соединения.
+Однако в IE и службах Windows используется конфигурация ОС.
+
+Обновление данных без триггеров
+-------------------------------
+set transaction isolation level serializable
+begin tran
+go
+disable trigger all on dbo.client
+go
+update
+go
+enable trigger all on dbo.client
+go
+-- rollback
+commit
+
+Шаблон использования транзакций
+-------------------------------
+https://docs.microsoft.com/ru-ru/sql/t-sql/language-elements/save-transaction-transact-sql
+
+declare @tran_count int = @@trancount
+
+begin try
+    if @tran_count > 0
+        save tran tran_save
+    else
+        begin tran
+
+    if @x = 1
+    begin
+        goto finally
+    end
+
+finally:
+    if @tran_count = 0
+        commit
+end try
+begin catch
+    if @tran_count = 0
+        rollback;
+    else if xact_state() != -1
+        rollback tran tran_save;
+
+    throw
+end catch
+
+Проверка наличия ошибок в batch
+-------------------------------
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+Механизм распределенных транзакций
+----------------------------------
+Можно выделить два типа ошибок при вызове процедуры на другом сервере.
+- Transaction count after EXECUTE indicates a mismatching number of BEGIN and COMMIT statements. Previous count = 1, current count = 0.
+Возникает при откате транзакции в процедуре на другом сервере.
+- Cannot promote the transaction to a distributed transaction because there is an active save point in this transaction.
+Возникает при наличии сохраненных транзакций и попытке вызова процедуры на другом сервере.
+
+Данные ошибки решаются отключением механизма распределенных транзакций (DTC) в связанном сервере, что не будет затрагивать локальные транзакции.
+@optname=N'remote proc transaction promotion', @optvalue=N'false'
+
+Получение списка веток репозитория Git
+--------------------------------------
+for b in $(git branch -r); do echo "$(basename "$b")"; done
+
+Бэкап репозитория Git
+---------------------
+# make backup
+git clone --bare https://gitlab.open-broker.ru/ntp/OPENDB.git
+
+# clone from backup
+git clone OPENDB.git opendb-backup
+
+Имперсонализация
+----------------
+execute as user = 'open.ru\baev'
+
+select suser_name()
+
+Новая строка в sql
+------------------
+declare @nl char(2) = char(13) + char(10) -- \r\n
+
+Отключение регистронезависимости в sql
+--------------------------------------
+collate Cyrillic_General_CS_AS
+
+select case when 'abc' = 'ABC' collate Cyrillic_General_CS_AS then 1 else 0 end
+
+Влитые ветки репозитория Git
+----------------------------
+git branch --merged - влитые локальные ветки
+git branch --merged origin/master -r - влитые внешние ветки
+
+Просмотр соединений на sql-сервере
+----------------------------------
+sp_who
+
+select * from sysprocesses
+where loginame = 'OPEN.RU\baev'
+
+Запуск джоба
+------------
+msdb.dbo.sp_start_job 'sync_stock_registration_qual'
+
+Максимальная дата в sql
+-----------------------
+99991231
+
+Добавление колонки со значением по умолчанию
+--------------------------------------------
+alter table dbo.person_contact
+add contact_guid uniqueidentifier not null default(newid())
+
+Бэкап таблицы
+-------------
+select * into dbo.person_address_backup
+from dbo.person_address
+
+Коллекция .gitignore файлов
+---------------------------
+https://github.com/github/gitignore
+
+Выборка числовых значений
+-------------------------
+select distinct cast(c.code as int)
+from dbo.client c
+where c.code not like '%[^0-9]%'
+
+Выдача сообщений об ошибке
+--------------------------
+raiserror('Ошибка', 16, 2)
+raiserror('Ошибка: %s', 16, 2, 'error')
+
+Ожидание задержки
+-----------------
+waitfor delay '00:00:05'
+
+Курсор
+------
+declare
+    @client_id int,
+    @code varchar(50)
+
+declare client_cursor cursor local fast_forward for
+select top 10
+    c.client_id,
+    c.code
+from dbo.client c
+
+open client_cursor
+
+fetch next from client_cursor into @client_id, @code
+
+while @@fetch_status = 0
+begin
+    print cast(@client_id as varchar) + ' ' + @code
+
+    fetch next from client_cursor into @client_id, @code
+end
+
+close client_cursor
+deallocate client_cursor
+
+Дата и время с точностью до секунд
+----------------------------------
+select cast(getdate() as datetime2(0))
+
+Конвертирование даты и времени в строку с точностью до секунд
+-------------------------------------------------------------
+select convert(varchar, getdate(), 120)
+
+Парсинг xml
+-----------
+declare @xml xml = '
+    <Root attr="9">
+        <Element>7</Element>
+        <Element2 attr="7" attr2="abc">8</Element2>
+        <Items>
+            <Item>3</Item>
+            <Item>1</Item>
+            <Item>2</Item>
+        </Items>
+        <Element2 attr="1:a"></Element2>
+    </Root>
+'
+
+-- получение значения элемента
+select @xml.value('(//Element)[1]', 'int')
+
+-- получение значения атрибута
+select @xml.value('(//Element2/@attr)[1]', 'int')
+
+-- получение значения элемента с атрибутом определенного значения
+select @xml.value('(//Element2[@attr="7"])[1]', 'int')
+
+-- получение xml определенного элемента
+select @xml.query('//Element')
+
+-- определение наличия элемента
+select @xml.exist('//Element')
+
+-- парсинг xml от корневого элемента
+select @xml.value('(*/@attr)[1]', 'int')
+
+-- обход списка элементов xml
+select top 1
+    ref.query('.')
+from @xml.nodes('//Items/Item') as node(ref)
+order by ref.value('.', 'int')
+
+-- определение количества элементов
+select @xml.query('count(//Items/Item)').value('.', 'int')
+
+-- использование условий при поиске элементов
+select @xml.query('//Items[Item="5" or Item="2"]')
+
+select @xml.query('//Element2[@attr="7" and @attr2="abc"]')
+select @xml.query('//Element2[@attr="7"][@attr2="abc"]')
+
+-- использование переменных sql в условиях парсинга xml
+declare @x int = 7
+select @xml.query('//Element2[@attr=sql:variable("@x")]')
+
+-- использование колонок sql и функции объединения строк в условиях парсинга xml
+select @xml.query('//Element2[@attr=concat(sql:column("t.code"),":a")]')
+from (values ('1'), ('2')) t (code)
+
+Сервис Брокер (Service Broker)
+------------------------------
+-- создание типа сообщения
+create message type personal_account_message validation = well_formed_xml;
+
+-- создание контракта
+create contract personal_account_contract (personal_account_message sent by initiator);
+
+--создание очереди
+create queue dbo.personal_account_queue with activation (procedure_name = dbo.personal_account_queue_handler, max_queue_readers = 1, execute as owner);
+
+-- создание службы
+create service personal_account_service on queue dbo.personal_account_queue (personal_account_contract);
+
+-- процедура активации
+create procedure [dbo].[personal_account_queue_handler]
+as
+--------------------------------------------------------------------------------
+-- Обработка сообщений в очереди
+--------------------------------------------------------------------------------
+begin
+    set nocount on;
+
+    declare 
+        @handle uniqueidentifier,
+        @type sysname,
+        @message xml
+
+    while 1=1
+    begin
+        set @handle = null
+
+        waitfor
+        (
+            receive top (1)
+                @handle = conversation_handle,
+                @type = message_type_name,
+                @message = message_body
+            from dbo.personal_account_queue
+        ), timeout 5000
+
+        if @handle is null
+            break
+
+        if @type = 'personal_account_message'
+        begin
+            declare @client_id int
+
+            declare client_cursor cursor local fast_forward for
+            select distinct
+                m.n.value('@id', 'int')
+            from @message.nodes('/root/client') m(n)
+
+            open client_cursor
+
+            fetch next from client_cursor into @client_id
+
+            while @@fetch_status = 0
+            begin
+                exec dbo.sync_personal_account @client_id
+
+                fetch next from client_cursor into @client_id
+            end
+
+            close client_cursor
+            deallocate client_cursor
+        end
+        else if @type = 'http://schemas.microsoft.com/SQL/ServiceBroker/EndDialog'
+            or @type = 'http://schemas.microsoft.com/SQL/ServiceBroker/Error'
+        begin
+            end conversation @handle
+        end
+    end
+end
+
+-- вызов службы
+declare @acc_client_xml xml =
+(
+    select i.clientid as [@id]
+    from inserted i
+    for xml path('client'), root('root')
+)
+
+if @acc_client_xml is not null
+begin
+    declare @acc_client_dialog_handle uniqueidentifier
+
+    begin dialog @acc_client_dialog_handle
+        from service personal_account_service
+        to service 'personal_account_service'
+        on contract personal_account_contract
+        with encryption = off, lifetime = 60;
+
+    send on conversation @acc_client_dialog_handle
+        message type personal_account_message (@acc_client_xml);
+
+    end conversation @acc_client_dialog_handle;
+end
+
+Формирование списка элементов в xml
+-----------------------------------
+select top 1
+    c.client_id as [@id],
+    (
+        select t.value as [@value]
+        from (values (1), (2), (3)) t (value)
+        for xml path('option'), type
+    ) as [options]
+from dbo.client c
+for xml path('client'), root('root')
+
+Поиск строки в текстах sql объектов
+-----------------------------------
+declare @search varchar(255) = ''
+
+select distinct
+    --s.name as [schema],
+    o.name as object,
+    o.type_desc as type
+from sys.sql_modules m
+join sys.objects o on o.object_id = m.object_id
+--join sys.schemas s on s.schema_id = o.schema_id
+where m.definition like '%' + @search + '%'
+
+Поиск строки в текстах джобов
+-----------------------------
+declare @search varchar(255) = ''
+
+select
+    j.name,
+    js.step_id,
+    j.enabled 
+from msdb.dbo.sysjobs j
+join msdb.dbo.sysjobsteps js on js.job_id = j.job_id 
+where js.command like '%' + @search + '%'
+
+Перекомпиляция запроса
+----------------------
+Для улучшения производительности при наличии условия вида "where column = isnull(@var_value, column)" можно использовать перекомпиляцию запроса.
+
+declare @client_id int = 3
+
+select *
+from dbo.client c
+where c.client_id = isnull(@client_id, c.client_id)
+option (recompile)
+
+Открытие WPF окон и представлений из приложения WinForms
+--------------------------------------------------------
+var item = (sender as System.Windows.Forms.ComboBox).SelectedItem as string;
+
+// установка курсора в ожидание при запуске форм и окон
+Cursor.Current = Cursors.WaitCursor;
+
+// создание объекта по строке типа
+object obj = Activator.CreateInstance(item.Split('.')[0], item).Unwrap();
+
+switch (obj)
+{
+    // открытие формы
+    case Form form:
+        form.Show();
+        break;
+    // открытие окна
+    case Window window:
+        window.Show();
+        break;
+    // открытие представления
+    case System.Windows.Controls.UserControl view:
+        var dxwindow = new DXWindow();
+        dxwindow.Content = view;
+        // интеграция WPF и WinForms для обработки ввода с клавиатуры
+        ElementHost.EnableModelessKeyboardInterop(dxwindow);
+        dxwindow.Show();
+        break;
+}
+
+// DXWindow.xaml
+<dx:ThemedWindow
+    x:Class="FormExecuter.DXWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:dx="http://schemas.devexpress.com/winfx/2008/xaml/core"
+    dx:ThemeManager.ThemeName="Office2019Colorful"
+    Title="DXWindow" Height="800" Width="1000">
+</dx:ThemedWindow>
